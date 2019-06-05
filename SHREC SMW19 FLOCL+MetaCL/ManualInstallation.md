@@ -37,7 +37,7 @@ Choose the VM
 Insert media(Settings -> storage -> controller: IDE -> "Empty" -> Optical drive (on the right, click the CD image) -> select the iso you downloaded previously
 Start the VM to proceed with the next stage
 
-# Installing Ubuntu and pre-requisites to the VM (started at 1pm)
+# Installing Ubuntu and pre-requisites to the VM
 #### Expected time 30 minutes
 
 If you've installed Ubunutu before these steps should feel familiar.
