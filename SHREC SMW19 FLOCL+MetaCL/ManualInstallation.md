@@ -22,7 +22,8 @@ The instructions below will help you set up the intended software environment fo
 * MetaCL+MetaMorph installed in the VM
 * FLOCL installed in the VM
 
-# Setting up the Virtual Machine (5 minutes)
+# Setting up the Virtual Machine
+#### Expected time: 5 minutes
 Download ubuntu 18.04.2 disk image
 Available at: http://releases.ubuntu.com/18.04/ubuntu-18.04.2-desktop-amd64.iso (Download took ~4 minutes on VT's eduroam)
 
@@ -38,7 +39,7 @@ Insert media(Settings -> storage -> controller: IDE -> "Empty" -> Optical drive 
 Start the VM to proceed with the next stage
 
 # Installing Ubuntu and pre-requisites to the VM
-#### Expected time 30 minutes
+#### Expected time: 30 minutes
 
 If you've installed Ubunutu before these steps should feel familiar.
 1. At the welcome screen select "Install Ubuntu"
@@ -61,7 +62,7 @@ Install our dependencies
 By this point the graphical package manager should have popped up and asked you to install security updates. Select them all and it will ask you to restart after they are installed.
 
 # Downloading, Building, and Configuration of MetaCL and MetaMorph
-#### Expected time 5 minutes
+#### Expected time: 5 minutes
 We will first install the MetaCL code generator from source. It relies on the Clang 6.0.0 packages we installed earlier.
 
 First clone the MetaMorph/MetaCL repository from GitHub
@@ -89,7 +90,7 @@ For convenience later we want to configure a few environment variables in our us
 **Note for those who wish to use a distribution/version other than 18.04.2: Follow the install instructions from the [MetaMorph/MetaCL repository](https://github.com/vtsynergy/MetaMorph/tree/master/metamorph-generators/opencl/docs/tutorials)**
 
 # Downloading, Building, and Configuration of FLOCL
-Expected time 40 minutes
+#### Expected time: 40 minutes
 
 FLOCL is a special branch of the `clang-tidy` linter tool. Eventually our new passes will be upstreamed but for now it exists as a separate repository. For this tutorial we have created a custom branch that includes numerous backports and special standalone build commands to make it compatible with the Clang 6.0.0 installed in Ubuntu 18.04. This has the benefit of not requiring a complete source install of Clang as is typical for clang-tidy.
 
