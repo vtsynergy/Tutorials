@@ -15,7 +15,7 @@ A pre-configured VM export was provided for the original tutorial. Instructions 
 
 # Example application setup (OpenDwarfs/LUD)
 
-####If you are using the pre-configured VM, the example setup has been performed already. Proceed to [Minimal MetaCL-ization](#Complete-MetaCL-ization).
+#### If you are using the pre-configured VM, the example setup has been performed already. Proceed to [Minimal MetaCL-ization](#Complete-MetaCL-ization).
 We will use LUD from the OpenDwarfs. (For future reproducibility, we will use commit `fdec39374f7e08d`, which was the current master branch HEAD at the time of the tutorial).
 
 Open a terminal (Click on the square of dots in the bottom left corner, or hit your Windows/Super key, and type "term" and select "Terminal" that comes up.)
