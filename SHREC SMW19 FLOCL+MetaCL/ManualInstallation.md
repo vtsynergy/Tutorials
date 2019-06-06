@@ -84,7 +84,6 @@ For convenience later we want to configure a few environment variables in our us
 * at the bottom add the following three lines to configure your environment to locate the MetaCL binary, MetaMorph libraries, and MetaMorph header files
     * `export PATH=$PATH:$HOME/MetaMorph/metamorph-generators/opencl/`
     * `export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/MetaMorph/lib`
-    * `export C_INCLUDE_PATH=$C_INCLUDE_PATH:/usr/include/clang/6.0.0/include`
     * `export C_INCLUDE_PATH=$C_INCLUDE_PATH:$HOME/MetaMorph/include`
 
 **Note for those who wish to use a distribution/version other than 18.04.2: Follow the install instructions from the [MetaMorph/MetaCL repository](https://github.com/vtsynergy/MetaMorph/tree/master/metamorph-generators/opencl/docs/tutorials)**
