@@ -13,24 +13,39 @@ A pre-configured VM export was provided for the original tutorial. Instructions 
 * An Ubuntu 18.04.2 VirtualMachine with FLOCL, MetaCL, and all their dependencies installed
 * (If using the provided VM export, it will also contain the example application and patch files referenced below)
 
-# Example application
+# Example application setup (OpenDwarfs/LUD)
 
-We will use LUD from the OpenDwarfs. (For future reproducibility, we will use commit `fdec39374f7e08d`, which was the current master HEAD at the time of the tutorial).
+####If you are using the pre-configured VM, the example setup has been performed already. Proceed to [Minimal MetaCL-ization](#Complete-MetaCL-ization).
+We will use LUD from the OpenDwarfs. (For future reproducibility, we will use commit `fdec39374f7e08d`, which was the current master branch HEAD at the time of the tutorial).
 
-cd ~
-git clone https://github.com/VTSynergy/OpenDwarfs
-cd OpenDwarfs
-git checkout fdec39374f7e08d
-Move the tests back to the homedir so they don't take up too much space
+Open a terminal (Click on the square of dots in the bottom left corner, or hit your Windows/Super key, and type "term" and select "Terminal" that comes up.)
 
-<<Pull this repository for the patches, and copy them to the homedirectory for convenience>>
+Clone the OpenDwarfs
+* `git clone https://github.com/VTSynergy/OpenDwarfs`
+Switch the the Dwarfs directory
+* `cd OpenDwarfs`
+And make sure you're on the intended revision by checking out the hash below
+* `git checkout fdec39374f7e08d`
 
-<<Build and initial test>>
-cd OpenDwarfs
-./autogen.sh
-cd build
-../configure --with-apps=lud
-make
+OpenDwarfs comes with several test data sets for the applications. We will make multiple copies of the Dwarfs source tree throughout the workshop, and we don't want to waste space with excess copies of the tests. Move them out to the home directory
+* `mv test ~/OpenDwarfs-tests`
+
+Finally, this tutorial provides several patch files that achieve all of the changes necessary throughout each of the stages of the tutorial. Return to the home directory and clone this repository to download them.
+* `cd ~`
+* `git clone https://github.com/VTSynergy/Tutorials.git`
+The patch files will then be contained in `~/Tutorials/SHREC SMW19 FLOCL+MetaCL/`. For consistency with the preconfigured VM, copy them to your host directory
+* `cp ~/Tutorials/SHREC\ SMW19\ FLOCL+MetaCL/LUD.* ~/`
+
+Finally, we will build the default version of the LUD application from the Dwarfs to confirm our OpenCL environment is working.
+* `cd OpenDwarfs`
+* `./autogen.sh`
+* `cd build`
+* `../configure --with-apps=lud`
+* `make`
+
+Then, we will run LUD on a small validation test
+* `./lud -i ~/OpendDwarfs-tests/dense-linear-algebra/lud/64.dat -v`
+If successful, it should print the contents of the matrix, and a line that says `SUCCESS: 0 difference of more than 0.0001f (absolute)`, followed by OpenDwarfs's timing information.
 
 # Minimal MetaCL-ization
 
