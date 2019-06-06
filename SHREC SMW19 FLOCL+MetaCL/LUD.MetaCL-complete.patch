@@ -1,0 +1,184 @@
+diff -Naur OpenDwarfs-MetaCL-minimal/dense-linear-algebra/lud/lud.c OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/lud.c
+--- OpenDwarfs-MetaCL-minimal/dense-linear-algebra/lud/lud.c	2019-06-05 14:35:18.614814478 -0400
++++ OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/lud.c	2019-06-05 14:36:12.526123566 -0400
+@@ -35,25 +35,14 @@
+ 	float *m, *mm;
+ 	stopwatch sw;
+ 
+-	//cl_device_id device_id;
+-	//cl_context context;
+-	//cl_command_queue commands;
+-	cl_program clProgram;
+-	cl_kernel clKernel_diagonal;
+-	cl_kernel clKernel_perimeter;
+-	cl_kernel clKernel_internal;
+ 	cl_int dev_type;
+ 
+ 	cl_int errcode;
+ 
+-	FILE *kernelFile;
+-	char *kernelSource;
+-	size_t kernelLength;
+-
+ 	cl_mem d_m;
+ 
+ 	ocd_init(&argc, &argv, NULL);
+-	ocd_initCL();
++	meta_set_acc(-1, metaModePreferOpenCL);
+ 
+ 	while ((opt = getopt_long(argc, argv, "::vs:i:", 
+ 					long_options, &option_index)) != -1 ) {
+@@ -106,6 +95,8 @@
+ 		matrix_duplicate(m, &mm, matrix_dim);
+ 	}
+ 
++	cl_platform_id plat;
++	meta_get_state_OpenCL(&plat, &device_id, &context, &commands);
+ 	size_t max_worksize[3];
+ 	errcode = clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_ITEM_SIZES,sizeof(size_t)*3, &max_worksize, NULL);
+ 	CHKERR(errcode, "Failed to get device info!");
+@@ -119,38 +110,21 @@
+ 	sprintf(arg,"-D BLOCK_SIZE=%d", (int)BLOCK_SIZE);
+ 	kernel_files = (char*) malloc(sizeof(char*)*num_kernels);
+ 	strcpy(kernel_files,"lud_kernel");
+-	cl_platform_id plat;
+-	clGetDeviceInfo(device_id, CL_DEVICE_PLATFORM, sizeof(cl_platform_id), &plat, NULL);
+-	meta_set_state_OpenCL(plat, device_id, context, commands);
+ 	__meta_gen_opencl_lud_kernel_custom_args = arg;
+ 	__meta_gen_opencl_lud_kernel_opt_gpu_custom_args = arg;
++	//Since we just computed the options, need to reinitialize, can do so by explicitly registering the LUDModule
++	//meta_register_module(&meta_gen_opencl_LUDModule_registry);
+ 
+-	clProgram = ocdBuildProgramFromFile(context,device_id,kernel_files,arg);
+-
+-	clKernel_diagonal = clCreateKernel(clProgram, "lud_diagonal", &errcode);
+-	CHKERR(errcode, "Failed to create kernel!");
+-	clKernel_perimeter = clCreateKernel(clProgram, "lud_perimeter", &errcode);
+-	CHKERR(errcode, "Failed to create kernel!");
+-	clKernel_internal = clCreateKernel(clProgram, "lud_internal", &errcode);
+-	CHKERR(errcode, "Failed to create kernel!");
+-
+-    d_m = clCreateBuffer(context, CL_MEM_READ_WRITE, matrix_dim*matrix_dim*sizeof(float), NULL, &errcode);
++	errcode = meta_alloc(&d_m, matrix_dim*matrix_dim*sizeof(cl_float));
+ 	CHKERR(errcode, "Failed to create buffer!");
+ 
+ 	/* beginning of timing point */
+ 	stopwatch_start(&sw);
+ 
+-	errcode = clEnqueueWriteBuffer(commands, d_m, CL_TRUE, 0, matrix_dim*matrix_dim*sizeof(float), (void *) m, 0, NULL, &ocdTempEvent);
+-
+-	clFinish(commands);
+-
+-	START_TIMER(ocdTempEvent, OCD_TIMER_H2D, "Matrix Copy", ocdTempTimer)
+-		END_TIMER(ocdTempTimer)
++	errcode = meta_copy_h2d(d_m, (void *) m, matrix_dim*matrix_dim*sizeof(cl_float), 0);
+ 		CHKERR(errcode, "Failed to enqueue write buffer!");
+ 
+ 	int i=0;
+-	size_t localWorkSize[2];
+-	size_t globalWorkSize[2];
+ 	a_dim3 grid={1,1,1}, block={1,1,1};
+ 	//printf("BLOCK_SIZE: %d\n",BLOCK_SIZE);	
+ 	//printf("max Work-item Size: %d\n",(int)max_worksize[0]);	
+@@ -158,85 +132,43 @@
+ 	for( int iter = 0; iter < 1000; iter++)
+ #endif
+ 		for (i=0; i < matrix_dim-BLOCK_SIZE; i += BLOCK_SIZE) {
+-			//errcode = clSetKernelArg(clKernel_diagonal, 0, sizeof(cl_mem), (void *) &d_m);
+-			//errcode |= clSetKernelArg(clKernel_diagonal, 1, sizeof(int), (void *) &matrix_dim);
+-			//errcode |= clSetKernelArg(clKernel_diagonal, 2, sizeof(int), (void *) &i);
+-			//CHKERR(errcode, "Failed to set kernel arguments!");
+-
+-			localWorkSize[0] = BLOCK_SIZE;
+-			globalWorkSize[0] = BLOCK_SIZE;
+ 			grid[0] = 1;
+ 			block[0] = BLOCK_SIZE;
+ 
+-			//errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
+ 			errcode = meta_gen_opencl_lud_kernel_lud_diagonal(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+-			clFinish(commands);
+ 		    printf("max Work-item Size2: %d\n",(int)max_worksize[0]);	
+ 			START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Diagonal Kernels", ocdTempTimer)
+ 				END_TIMER(ocdTempTimer)
+-				CHKERR(errcode, "Failed to enqueue kernel!");
+-			//errcode = clSetKernelArg(clKernel_perimeter, 0, sizeof(cl_mem), (void *) &d_m);
+-			//errcode |= clSetKernelArg(clKernel_perimeter, 1, sizeof(int), (void *) &matrix_dim);
+-			//errcode |= clSetKernelArg(clKernel_perimeter, 2, sizeof(int), (void *) &i);
+-			//CHKERR(errcode, "Failed to set kernel arguments!");
+-			localWorkSize[0] = BLOCK_SIZE*2;
+-			globalWorkSize[0] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[0];
+ 			block[0] = BLOCK_SIZE*2;
+ 			grid[0] = ((matrix_dim-i)/BLOCK_SIZE-1);
+ 
+-			//errcode = clEnqueueNDRangeKernel(commands, clKernel_perimeter, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
+ 			errcode = meta_gen_opencl_lud_kernel_lud_perimeter(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+-			clFinish(commands);
+ 			START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Perimeter Kernel", ocdTempTimer)
+-				CHKERR(errcode, "Failed to enqueue kernel!");
+ 			END_TIMER(ocdTempTimer)
+-			//	errcode = clSetKernelArg(clKernel_internal, 0, sizeof(cl_mem), (void *) &d_m);
+-			//errcode |= clSetKernelArg(clKernel_internal, 1, sizeof(int), (void *) &matrix_dim);
+-			//errcode |= clSetKernelArg(clKernel_internal, 2, sizeof(int), (void *) &i);
+-			//CHKERR(errcode, "Failed to set kernel arguments!");
+-			localWorkSize[0] = BLOCK_SIZE;
+-			localWorkSize[1] = BLOCK_SIZE;
+-			globalWorkSize[0] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[0];
+-			globalWorkSize[1] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[1];
+ 			block[0] = BLOCK_SIZE;
+ 			block[1] = BLOCK_SIZE;
+ 			grid[0] = ((matrix_dim-i)/BLOCK_SIZE-1);
+ 			grid[1] = ((matrix_dim-i)/BLOCK_SIZE-1);
+ 
+-			//errcode = clEnqueueNDRangeKernel(commands, clKernel_internal, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
+ 			errcode = meta_gen_opencl_lud_kernel_lud_internal(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+ 			//unset the upper dimensions of grid and block since MetaCL assumes 3D kernels
+ 			grid[1] = 1; block[1] = 1;
+-			clFinish(commands);
+ 			START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Internal Kernel", ocdTempTimer)
+ 				END_TIMER(ocdTempTimer)
+-				CHKERR(errcode, "Failed to enqueue kernel!");
+ 		}
+-	//errcode = clSetKernelArg(clKernel_diagonal, 0, sizeof(cl_mem), (void *) &d_m);
+-	//errcode |= clSetKernelArg(clKernel_diagonal, 1, sizeof(int), (void *) &matrix_dim);
+-	//errcode |= clSetKernelArg(clKernel_diagonal, 2, sizeof(int), (void *) &i);
+-	//CHKERR(errcode, "Failed to set kernel arguments!");
+-	localWorkSize[0] = BLOCK_SIZE;
+-	globalWorkSize[0] = BLOCK_SIZE;
+ 	block[0] = BLOCK_SIZE;
+ 	grid[0] = 1;
+ 
+-	//errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
+ 	errcode = meta_gen_opencl_lud_kernel_lud_diagonal(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+-	clFinish(commands);
+ 	START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Diagonal Kernels", ocdTempTimer)
+-		CHKERR(errcode, "Failed to enqueue kernel!");
+ 	END_TIMER(ocdTempTimer)
+ 
+-		errcode = clEnqueueReadBuffer(commands, d_m, CL_TRUE, 0, matrix_dim*matrix_dim*sizeof(float), (void *) m, 0, NULL, &ocdTempEvent);
+-	clFinish(commands);
+-	START_TIMER(ocdTempEvent, OCD_TIMER_D2H, "Matrix copy", ocdTempTimer)
+-		END_TIMER(ocdTempTimer)
++		errcode = meta_copy_d2h((void *) m, d_m, matrix_dim*matrix_dim*sizeof(cl_float), 0);
+ 		/* end of timing point */
+ 		stopwatch_stop(&sw);
+ 	printf("Time consumed(ms): %lf\n", 1000*get_interval_by_sec(&sw));
+ 
+-	clReleaseMemObject(d_m);
++	meta_free(d_m);
+ 
+ 	if (do_verify){
+ 		printf("After LUD\n");
+@@ -247,13 +179,6 @@
+ 		free(mm);
+ 	}
+ 
+-	clReleaseKernel(clKernel_diagonal);
+-	clReleaseKernel(clKernel_perimeter);
+-	clReleaseKernel(clKernel_internal);
+-	clReleaseProgram(clProgram);
+-	clReleaseCommandQueue(commands);
+-	clReleaseContext(context);
+-
+ 	free(m);
+ 	ocd_finalize();
+ 	return EXIT_SUCCESS;

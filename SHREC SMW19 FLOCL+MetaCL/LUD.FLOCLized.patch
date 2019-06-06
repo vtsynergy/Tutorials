@@ -1,0 +1,394 @@
+diff -Naur OpenDwarfs-MetaCL-complete/build/lud_kernel.cl OpenDwarfs-FLOCLized/build/lud_kernel.cl
+--- OpenDwarfs-MetaCL-complete/build/lud_kernel.cl	2019-06-05 15:00:50.719277808 -0400
++++ OpenDwarfs-FLOCLized/build/lud_kernel.cl	2019-06-05 14:55:44.074265400 -0400
+@@ -8,12 +8,14 @@
+ 	for(i=0; i < BLOCK_SIZE; i++) {
+ 
+ 		if (get_local_id(0)>i){
+-			for(j=0; j < i; j++)
++			#pragma unroll BLOCK_SIZE
++			for(j=0; j < i; j++) 
+ 				m[array_offset+get_local_id(0)*matrix_dim+i] -= m[array_offset+get_local_id(0)*matrix_dim+j]*m[array_offset+j*matrix_dim+i];
+ 			m[array_offset+get_local_id(0)*matrix_dim+i] /= m[array_offset+i*matrix_dim+i];
+ 		}
+ 		barrier(CLK_GLOBAL_MEM_FENCE);
+ 		if (get_local_id(0)>i){
++			#pragma unroll BLOCK_SIZE+1 
+ 			for(j=0; j < i+1; j++)
+ 				m[array_offset+(i+1)*matrix_dim+get_local_id(0)] -= m[array_offset+(i+1)*matrix_dim+j]*m[array_offset+j*matrix_dim+get_local_id(0)];
+ 		}
+@@ -72,11 +74,12 @@
+ 	 */
+ 	if (get_local_id(0) < BLOCK_SIZE) { //peri-row
+ 
+-		idx=get_local_id(0);
++		idx=get_local_id(0);//NOLINT
+ 
+ 		array_offset = offset*matrix_dim+offset;
+ 
+ 		for(i=1; i < BLOCK_SIZE; i++){
++			#pragma unroll BLOCK_SIZE-1
+ 			for (j=0; j < i; j++)
+ 				m[array_offset+i*matrix_dim+(get_group_id(0)+1)*BLOCK_SIZE+idx] -= m[array_offset+i*matrix_dim+j]*m[array_offset+j*matrix_dim+(get_group_id(0)+1)*BLOCK_SIZE+idx];
+ 			//peri_row[i][idx]-=dia[i][j]*peri_row[j][idx];
+@@ -89,13 +92,14 @@
+ 		//}
+ 	} else { //peri-col
+ 
+-		idx=get_local_id(0) - BLOCK_SIZE;
++		idx=get_local_id(0) - BLOCK_SIZE;//NOLINT
+ 
+ 		array_offset_peri = (offset+(get_group_id(0)+1)*BLOCK_SIZE)*matrix_dim+offset;
+ 		//array_offset_dia = (offset+BLOCK_SIZE/2)*matrix_dim+offset;
+ 		array_offset = offset*matrix_dim+offset;
+ 
+ 		for(i=0; i < BLOCK_SIZE; i++){
++			#pragma unroll BLOCK_SIZE
+ 			for(j=0; j < i; j++)
+ 				m[array_offset_peri+idx*matrix_dim+i] -= m[array_offset_peri+idx*matrix_dim+j] * m[array_offset+j*matrix_dim+i];
+ 			//peri_col[idx][i]-=peri_col[idx][j]*m[array_offset+j*matrix_dim+i];//diko mou doulevei mono dia[] allagmeno
+@@ -127,8 +131,9 @@
+ 	int global_col_id = offset + (get_group_id(0)+1)*BLOCK_SIZE;
+ 
+ 	sum = 0;
++	#pragma unroll BLOCK_SIZE
+ 	for (i=0; i < BLOCK_SIZE; i++)
+-		sum += m[(global_row_id+get_local_id(1))*matrix_dim+offset+i] * m[(offset+i)*matrix_dim+global_col_id+get_local_id(0)];
++		sum += m[(global_row_id+get_local_id(1))*matrix_dim+offset+i] * m[(offset+i)*matrix_dim+global_col_id+get_local_id(0)];//NOLINT
+ 	m[(global_row_id+get_local_id(1))*matrix_dim+global_col_id+get_local_id(0)] -= sum;
+ 
+ 
+diff -Naur OpenDwarfs-MetaCL-complete/build/lud_kernel_opt_gpu.cl OpenDwarfs-FLOCLized/build/lud_kernel_opt_gpu.cl
+--- OpenDwarfs-MetaCL-complete/build/lud_kernel_opt_gpu.cl	2019-06-05 15:00:50.719277808 -0400
++++ OpenDwarfs-FLOCLized/build/lud_kernel_opt_gpu.cl	2019-06-05 14:55:44.074265400 -0400
+@@ -6,6 +6,7 @@
+   __local float shadow[BLOCK_SIZE][BLOCK_SIZE];
+ 
+   int array_offset = offset*matrix_dim+offset;
++  #pragma unroll BLOCK_SIZE
+   for(i=0; i < BLOCK_SIZE; i++){
+     shadow[i][get_local_id(0)]=m[array_offset+get_local_id(0)];
+     array_offset += matrix_dim;
+@@ -15,16 +16,21 @@
+   for(i=0; i < BLOCK_SIZE-1; i++) {
+ 
+     if (get_local_id(0)>i){
++      #pragma unroll BLOCK_SIZE-1
+       for(j=0; j < i; j++)
+         shadow[get_local_id(0)][i] -= shadow[get_local_id(0)][j]*shadow[j][i];
+       shadow[get_local_id(0)][i] /= shadow[i][i];
+ 
+-      barrier(CLK_LOCAL_MEM_FENCE);
++      barrier(CLK_LOCAL_MEM_FENCE);//NOLINT
+ 
++      #pragma unroll BLOCK_SIZE
+       for(j=0; j < i+1; j++)
+         shadow[i+1][get_local_id(0)] -= shadow[i+1][j]*shadow[j][get_local_id(0)];
+ 
+       barrier(CLK_LOCAL_MEM_FENCE);
++    } else {
++      barrier(CLK_LOCAL_MEM_FENCE);
++      barrier(CLK_LOCAL_MEM_FENCE);
+     }
+   }
+ 
+@@ -35,6 +41,7 @@
+ 
+    */
+   array_offset = (offset+1)*matrix_dim+offset;
++  #pragma unroll BLOCK_SIZE-1
+   for(i=1; i < BLOCK_SIZE; i++){
+     m[array_offset+get_local_id(0)]=shadow[i][get_local_id(0)];
+     array_offset += matrix_dim;
+@@ -52,30 +59,34 @@
+   int idx;
+ 
+   if (get_local_id(0) < BLOCK_SIZE) {
+-    idx = get_local_id(0);
++    idx = get_local_id(0);//NOLINT
+     
+     array_offset = offset*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE/2
+     for (i=0; i < BLOCK_SIZE/2; i++){
+       dia[i][idx]=m[array_offset+idx];
+       array_offset += matrix_dim;
+     }
+     
+     array_offset = offset*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE
+     for (i=0; i < BLOCK_SIZE; i++) {
+       peri_row[i][idx]=m[array_offset+(get_group_id(0)+1)*BLOCK_SIZE+idx];
+       array_offset += matrix_dim;
+     }
+ 
+   } else {
+-    idx = get_local_id(0)-BLOCK_SIZE;
++    idx = get_local_id(0)-BLOCK_SIZE;//NOLINT
+     
+     array_offset = (offset+BLOCK_SIZE/2)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE/2
+     for (i=BLOCK_SIZE/2; i < BLOCK_SIZE; i++){
+       dia[i][idx]=m[array_offset+idx];
+       array_offset += matrix_dim;
+     }
+     
+     array_offset = (offset+(get_group_id(0)+1)*BLOCK_SIZE)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE
+     for (i=0; i < BLOCK_SIZE; i++) {
+       peri_col[i][idx] = m[array_offset+idx];
+       array_offset += matrix_dim;
+@@ -85,20 +96,24 @@
+   barrier(CLK_LOCAL_MEM_FENCE);
+ 
+   if (get_local_id(0) < BLOCK_SIZE) { //peri-row
+-    idx=get_local_id(0);
++    idx=get_local_id(0);//NOLINT
+     for(i=1; i < BLOCK_SIZE; i++){
++      #pragma unroll BLOCK_SIZE-1
+       for (j=0; j < i; j++)
+         peri_row[i][idx]-=dia[i][j]*peri_row[j][idx];
+     }
++    barrier(CLK_LOCAL_MEM_FENCE);//NOLINT
+     
+     array_offset = (offset+1)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE-1
+     for(i=1; i < BLOCK_SIZE; i++){
+       m[array_offset+(get_group_id(0)+1)*BLOCK_SIZE+idx] = peri_row[i][idx];
+       array_offset += matrix_dim;
+     }
+   } else { //peri-col
+-    idx=get_local_id(0) - BLOCK_SIZE;
++    idx=get_local_id(0) - BLOCK_SIZE;//NOLINT
+     for(i=0; i < BLOCK_SIZE; i++){
++      #pragma unroll BLOCK_SIZE
+       for(j=0; j < i; j++)
+         peri_col[idx][i]-=peri_col[idx][j]*dia[j][i];
+       peri_col[idx][i] /= dia[i][i];
+@@ -107,6 +122,7 @@
+     barrier(CLK_LOCAL_MEM_FENCE);
+     
+     array_offset = (offset+(get_group_id(0)+1)*BLOCK_SIZE)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE
+     for(i=0; i < BLOCK_SIZE; i++){
+       m[array_offset+idx] =  peri_col[i][idx];
+       array_offset += matrix_dim;
+@@ -133,8 +149,9 @@
+   barrier(CLK_LOCAL_MEM_FENCE);
+ 
+   sum = 0;
++  #pragma unroll BLOCK_SIZE
+   for (i=0; i < BLOCK_SIZE; i++)
+-    sum += peri_col[get_local_id(1)][i] * peri_row[i][get_local_id(0)];
++    sum += peri_col[get_local_id(1)][i] * peri_row[i][get_local_id(0)];//NOLINT
+   m[(global_row_id+get_local_id(1))*matrix_dim+global_col_id+get_local_id(0)] -= sum;
+ 
+ 
+diff -Naur OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/lud_kernel.cl OpenDwarfs-FLOCLized/dense-linear-algebra/lud/lud_kernel.cl
+--- OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/lud_kernel.cl	2019-06-05 14:35:45.550469268 -0400
++++ OpenDwarfs-FLOCLized/dense-linear-algebra/lud/lud_kernel.cl	2019-06-05 14:37:10.845376251 -0400
+@@ -8,12 +8,14 @@
+ 	for(i=0; i < BLOCK_SIZE; i++) {
+ 
+ 		if (get_local_id(0)>i){
+-			for(j=0; j < i; j++)
++			#pragma unroll BLOCK_SIZE
++			for(j=0; j < i; j++) 
+ 				m[array_offset+get_local_id(0)*matrix_dim+i] -= m[array_offset+get_local_id(0)*matrix_dim+j]*m[array_offset+j*matrix_dim+i];
+ 			m[array_offset+get_local_id(0)*matrix_dim+i] /= m[array_offset+i*matrix_dim+i];
+ 		}
+ 		barrier(CLK_GLOBAL_MEM_FENCE);
+ 		if (get_local_id(0)>i){
++			#pragma unroll BLOCK_SIZE+1 
+ 			for(j=0; j < i+1; j++)
+ 				m[array_offset+(i+1)*matrix_dim+get_local_id(0)] -= m[array_offset+(i+1)*matrix_dim+j]*m[array_offset+j*matrix_dim+get_local_id(0)];
+ 		}
+@@ -72,11 +74,12 @@
+ 	 */
+ 	if (get_local_id(0) < BLOCK_SIZE) { //peri-row
+ 
+-		idx=get_local_id(0);
++		idx=get_local_id(0);//NOLINT
+ 
+ 		array_offset = offset*matrix_dim+offset;
+ 
+ 		for(i=1; i < BLOCK_SIZE; i++){
++			#pragma unroll BLOCK_SIZE-1
+ 			for (j=0; j < i; j++)
+ 				m[array_offset+i*matrix_dim+(get_group_id(0)+1)*BLOCK_SIZE+idx] -= m[array_offset+i*matrix_dim+j]*m[array_offset+j*matrix_dim+(get_group_id(0)+1)*BLOCK_SIZE+idx];
+ 			//peri_row[i][idx]-=dia[i][j]*peri_row[j][idx];
+@@ -89,13 +92,14 @@
+ 		//}
+ 	} else { //peri-col
+ 
+-		idx=get_local_id(0) - BLOCK_SIZE;
++		idx=get_local_id(0) - BLOCK_SIZE;//NOLINT
+ 
+ 		array_offset_peri = (offset+(get_group_id(0)+1)*BLOCK_SIZE)*matrix_dim+offset;
+ 		//array_offset_dia = (offset+BLOCK_SIZE/2)*matrix_dim+offset;
+ 		array_offset = offset*matrix_dim+offset;
+ 
+ 		for(i=0; i < BLOCK_SIZE; i++){
++			#pragma unroll BLOCK_SIZE
+ 			for(j=0; j < i; j++)
+ 				m[array_offset_peri+idx*matrix_dim+i] -= m[array_offset_peri+idx*matrix_dim+j] * m[array_offset+j*matrix_dim+i];
+ 			//peri_col[idx][i]-=peri_col[idx][j]*m[array_offset+j*matrix_dim+i];//diko mou doulevei mono dia[] allagmeno
+@@ -127,8 +131,9 @@
+ 	int global_col_id = offset + (get_group_id(0)+1)*BLOCK_SIZE;
+ 
+ 	sum = 0;
++	#pragma unroll BLOCK_SIZE
+ 	for (i=0; i < BLOCK_SIZE; i++)
+-		sum += m[(global_row_id+get_local_id(1))*matrix_dim+offset+i] * m[(offset+i)*matrix_dim+global_col_id+get_local_id(0)];
++		sum += m[(global_row_id+get_local_id(1))*matrix_dim+offset+i] * m[(offset+i)*matrix_dim+global_col_id+get_local_id(0)];//NOLINT
+ 	m[(global_row_id+get_local_id(1))*matrix_dim+global_col_id+get_local_id(0)] -= sum;
+ 
+ 
+diff -Naur OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/lud_kernel_opt_gpu.cl OpenDwarfs-FLOCLized/dense-linear-algebra/lud/lud_kernel_opt_gpu.cl
+--- OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/lud_kernel_opt_gpu.cl	2019-06-05 14:35:45.550469268 -0400
++++ OpenDwarfs-FLOCLized/dense-linear-algebra/lud/lud_kernel_opt_gpu.cl	2019-06-05 14:37:10.845376251 -0400
+@@ -6,6 +6,7 @@
+   __local float shadow[BLOCK_SIZE][BLOCK_SIZE];
+ 
+   int array_offset = offset*matrix_dim+offset;
++  #pragma unroll BLOCK_SIZE
+   for(i=0; i < BLOCK_SIZE; i++){
+     shadow[i][get_local_id(0)]=m[array_offset+get_local_id(0)];
+     array_offset += matrix_dim;
+@@ -15,16 +16,21 @@
+   for(i=0; i < BLOCK_SIZE-1; i++) {
+ 
+     if (get_local_id(0)>i){
++      #pragma unroll BLOCK_SIZE-1
+       for(j=0; j < i; j++)
+         shadow[get_local_id(0)][i] -= shadow[get_local_id(0)][j]*shadow[j][i];
+       shadow[get_local_id(0)][i] /= shadow[i][i];
+ 
+-      barrier(CLK_LOCAL_MEM_FENCE);
++      barrier(CLK_LOCAL_MEM_FENCE);//NOLINT
+ 
++      #pragma unroll BLOCK_SIZE
+       for(j=0; j < i+1; j++)
+         shadow[i+1][get_local_id(0)] -= shadow[i+1][j]*shadow[j][get_local_id(0)];
+ 
+       barrier(CLK_LOCAL_MEM_FENCE);
++    } else {
++      barrier(CLK_LOCAL_MEM_FENCE);
++      barrier(CLK_LOCAL_MEM_FENCE);
+     }
+   }
+ 
+@@ -35,6 +41,7 @@
+ 
+    */
+   array_offset = (offset+1)*matrix_dim+offset;
++  #pragma unroll BLOCK_SIZE-1
+   for(i=1; i < BLOCK_SIZE; i++){
+     m[array_offset+get_local_id(0)]=shadow[i][get_local_id(0)];
+     array_offset += matrix_dim;
+@@ -52,30 +59,34 @@
+   int idx;
+ 
+   if (get_local_id(0) < BLOCK_SIZE) {
+-    idx = get_local_id(0);
++    idx = get_local_id(0);//NOLINT
+     
+     array_offset = offset*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE/2
+     for (i=0; i < BLOCK_SIZE/2; i++){
+       dia[i][idx]=m[array_offset+idx];
+       array_offset += matrix_dim;
+     }
+     
+     array_offset = offset*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE
+     for (i=0; i < BLOCK_SIZE; i++) {
+       peri_row[i][idx]=m[array_offset+(get_group_id(0)+1)*BLOCK_SIZE+idx];
+       array_offset += matrix_dim;
+     }
+ 
+   } else {
+-    idx = get_local_id(0)-BLOCK_SIZE;
++    idx = get_local_id(0)-BLOCK_SIZE;//NOLINT
+     
+     array_offset = (offset+BLOCK_SIZE/2)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE/2
+     for (i=BLOCK_SIZE/2; i < BLOCK_SIZE; i++){
+       dia[i][idx]=m[array_offset+idx];
+       array_offset += matrix_dim;
+     }
+     
+     array_offset = (offset+(get_group_id(0)+1)*BLOCK_SIZE)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE
+     for (i=0; i < BLOCK_SIZE; i++) {
+       peri_col[i][idx] = m[array_offset+idx];
+       array_offset += matrix_dim;
+@@ -85,20 +96,24 @@
+   barrier(CLK_LOCAL_MEM_FENCE);
+ 
+   if (get_local_id(0) < BLOCK_SIZE) { //peri-row
+-    idx=get_local_id(0);
++    idx=get_local_id(0);//NOLINT
+     for(i=1; i < BLOCK_SIZE; i++){
++      #pragma unroll BLOCK_SIZE-1
+       for (j=0; j < i; j++)
+         peri_row[i][idx]-=dia[i][j]*peri_row[j][idx];
+     }
++    barrier(CLK_LOCAL_MEM_FENCE);//NOLINT
+     
+     array_offset = (offset+1)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE-1
+     for(i=1; i < BLOCK_SIZE; i++){
+       m[array_offset+(get_group_id(0)+1)*BLOCK_SIZE+idx] = peri_row[i][idx];
+       array_offset += matrix_dim;
+     }
+   } else { //peri-col
+-    idx=get_local_id(0) - BLOCK_SIZE;
++    idx=get_local_id(0) - BLOCK_SIZE;//NOLINT
+     for(i=0; i < BLOCK_SIZE; i++){
++      #pragma unroll BLOCK_SIZE
+       for(j=0; j < i; j++)
+         peri_col[idx][i]-=peri_col[idx][j]*dia[j][i];
+       peri_col[idx][i] /= dia[i][i];
+@@ -107,6 +122,7 @@
+     barrier(CLK_LOCAL_MEM_FENCE);
+     
+     array_offset = (offset+(get_group_id(0)+1)*BLOCK_SIZE)*matrix_dim+offset;
++    #pragma unroll BLOCK_SIZE
+     for(i=0; i < BLOCK_SIZE; i++){
+       m[array_offset+idx] =  peri_col[i][idx];
+       array_offset += matrix_dim;
+@@ -133,8 +149,9 @@
+   barrier(CLK_LOCAL_MEM_FENCE);
+ 
+   sum = 0;
++  #pragma unroll BLOCK_SIZE
+   for (i=0; i < BLOCK_SIZE; i++)
+-    sum += peri_col[get_local_id(1)][i] * peri_row[i][get_local_id(0)];
++    sum += peri_col[get_local_id(1)][i] * peri_row[i][get_local_id(0)];//NOLINT
+   m[(global_row_id+get_local_id(1))*matrix_dim+global_col_id+get_local_id(0)] -= sum;
+ 
+ 
+diff -Naur OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/Makefile.mk OpenDwarfs-FLOCLized/dense-linear-algebra/lud/Makefile.mk
+--- OpenDwarfs-MetaCL-complete/dense-linear-algebra/lud/Makefile.mk	2019-06-05 14:58:51.768458016 -0400
++++ OpenDwarfs-FLOCLized/dense-linear-algebra/lud/Makefile.mk	2019-06-05 14:55:32.406375040 -0400
+@@ -11,11 +11,20 @@
+ lud_SOURCES = dense-linear-algebra/lud/lud.c dense-linear-algebra/lud/common.c dense-linear-algebra/lud/LUDModule.c
+ lud_LDFLAGS = -lmetamorph -lmm_opencl_backend -L$(HOME)/MetaMorph/lib -R$(HOME)/MetaMorph/lib
+ lud_CFLAGS = -I ~/MetaMorph/include -I ~/MetaMorph/metamorph-backends/opencl-backend/
++lud_DEPENDENCIES = flocl-lud-kernel flocl-lud-kernel-opt-gpu
+ BUILT_SOURCES = dense-linear-algebra/lud/LUDModule.h
+ 
+ all_local += lud-all-local
+ exec_local += lud-exec-local
+ 
++flocl-lud-kernel: lud-FORCE
++	cd ${top_srcdir}/dense-linear-algebra/lud && ~/FLOCL/standalone_build/build/flocl/clang-tidy/tool/clang-tidy -checks=-*,OpenCL*,FPGA* lud_kernel.cl -- -cl-std=CL1.2 --include opencl-c.h -I /usr/lib/llvm-6.0/lib/clang/6.0.0/include ${lud_KERNELARGS}
++
++flocl-lud-kernel-opt-gpu: lud-FORCE
++	cd ${top_srcdir}/dense-linear-algebra/lud && ~/FLOCL/standalone_build/build/flocl/clang-tidy/tool/clang-tidy -checks=-*,OpenCL*,FPGA* lud_kernel_opt_gpu.cl -- -cl-std=CL1.2 --include opencl-c.h -I /usr/lib/llvm-6.0/lib/clang/6.0.0/include ${lud_KERNELARGS}
++
++lud-FORCE:
++
+ dense-linear-algebra/lud/LUDModule.h: dense-linear-algebra/lud/LUDModule.c
+ 
+ dense-linear-algebra/lud/LUDModule.c: $(top_srcdir)/dense-linear-algebra/lud/lud_kernel.cl $(top_srcdir)/dense-linear-algebra/lud/lud_kernel_opt_gpu.cl

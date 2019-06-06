@@ -1,0 +1,157 @@
+diff -Naur OpenDwarfs/dense-linear-algebra/lud/lud.c OpenDwarfs-MetaCL-minimal/dense-linear-algebra/lud/lud.c
+--- OpenDwarfs/dense-linear-algebra/lud/lud.c	2019-06-05 14:16:55.828989599 -0400
++++ OpenDwarfs-MetaCL-minimal/dense-linear-algebra/lud/lud.c	2019-06-05 14:35:18.614814478 -0400
+@@ -7,6 +7,8 @@
+ #include "../../include/rdtsc.h"
+ #include "../../include/common_args.h"
+ #include "common.h"
++#include "mm_opencl_backend.h"
++#include "LUDModule.h"
+ 
+ //#define USEGPU 1
+ int BLOCK_SIZE = 16;
+@@ -117,6 +119,11 @@
+ 	sprintf(arg,"-D BLOCK_SIZE=%d", (int)BLOCK_SIZE);
+ 	kernel_files = (char*) malloc(sizeof(char*)*num_kernels);
+ 	strcpy(kernel_files,"lud_kernel");
++	cl_platform_id plat;
++	clGetDeviceInfo(device_id, CL_DEVICE_PLATFORM, sizeof(cl_platform_id), &plat, NULL);
++	meta_set_state_OpenCL(plat, device_id, context, commands);
++	__meta_gen_opencl_lud_kernel_custom_args = arg;
++	__meta_gen_opencl_lud_kernel_opt_gpu_custom_args = arg;
+ 
+ 	clProgram = ocdBuildProgramFromFile(context,device_id,kernel_files,arg);
+ 
+@@ -136,6 +143,7 @@
+ 	errcode = clEnqueueWriteBuffer(commands, d_m, CL_TRUE, 0, matrix_dim*matrix_dim*sizeof(float), (void *) m, 0, NULL, &ocdTempEvent);
+ 
+ 	clFinish(commands);
++
+ 	START_TIMER(ocdTempEvent, OCD_TIMER_H2D, "Matrix Copy", ocdTempTimer)
+ 		END_TIMER(ocdTempTimer)
+ 		CHKERR(errcode, "Failed to enqueue write buffer!");
+@@ -143,61 +151,78 @@
+ 	int i=0;
+ 	size_t localWorkSize[2];
+ 	size_t globalWorkSize[2];
++	a_dim3 grid={1,1,1}, block={1,1,1};
+ 	//printf("BLOCK_SIZE: %d\n",BLOCK_SIZE);	
+ 	//printf("max Work-item Size: %d\n",(int)max_worksize[0]);	
+ #ifdef START_POWER
+ 	for( int iter = 0; iter < 1000; iter++)
+ #endif
+ 		for (i=0; i < matrix_dim-BLOCK_SIZE; i += BLOCK_SIZE) {
+-			errcode = clSetKernelArg(clKernel_diagonal, 0, sizeof(cl_mem), (void *) &d_m);
+-			errcode |= clSetKernelArg(clKernel_diagonal, 1, sizeof(int), (void *) &matrix_dim);
+-			errcode |= clSetKernelArg(clKernel_diagonal, 2, sizeof(int), (void *) &i);
+-			CHKERR(errcode, "Failed to set kernel arguments!");
++			//errcode = clSetKernelArg(clKernel_diagonal, 0, sizeof(cl_mem), (void *) &d_m);
++			//errcode |= clSetKernelArg(clKernel_diagonal, 1, sizeof(int), (void *) &matrix_dim);
++			//errcode |= clSetKernelArg(clKernel_diagonal, 2, sizeof(int), (void *) &i);
++			//CHKERR(errcode, "Failed to set kernel arguments!");
+ 
+ 			localWorkSize[0] = BLOCK_SIZE;
+ 			globalWorkSize[0] = BLOCK_SIZE;
++			grid[0] = 1;
++			block[0] = BLOCK_SIZE;
+ 
+-			errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++			//errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++			errcode = meta_gen_opencl_lud_kernel_lud_diagonal(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+ 			clFinish(commands);
+ 		    printf("max Work-item Size2: %d\n",(int)max_worksize[0]);	
+ 			START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Diagonal Kernels", ocdTempTimer)
+ 				END_TIMER(ocdTempTimer)
+ 				CHKERR(errcode, "Failed to enqueue kernel!");
+-			errcode = clSetKernelArg(clKernel_perimeter, 0, sizeof(cl_mem), (void *) &d_m);
+-			errcode |= clSetKernelArg(clKernel_perimeter, 1, sizeof(int), (void *) &matrix_dim);
+-			errcode |= clSetKernelArg(clKernel_perimeter, 2, sizeof(int), (void *) &i);
+-			CHKERR(errcode, "Failed to set kernel arguments!");
++			//errcode = clSetKernelArg(clKernel_perimeter, 0, sizeof(cl_mem), (void *) &d_m);
++			//errcode |= clSetKernelArg(clKernel_perimeter, 1, sizeof(int), (void *) &matrix_dim);
++			//errcode |= clSetKernelArg(clKernel_perimeter, 2, sizeof(int), (void *) &i);
++			//CHKERR(errcode, "Failed to set kernel arguments!");
+ 			localWorkSize[0] = BLOCK_SIZE*2;
+ 			globalWorkSize[0] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[0];
++			block[0] = BLOCK_SIZE*2;
++			grid[0] = ((matrix_dim-i)/BLOCK_SIZE-1);
+ 
+-			errcode = clEnqueueNDRangeKernel(commands, clKernel_perimeter, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++			//errcode = clEnqueueNDRangeKernel(commands, clKernel_perimeter, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++			errcode = meta_gen_opencl_lud_kernel_lud_perimeter(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+ 			clFinish(commands);
+ 			START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Perimeter Kernel", ocdTempTimer)
+ 				CHKERR(errcode, "Failed to enqueue kernel!");
+ 			END_TIMER(ocdTempTimer)
+-				errcode = clSetKernelArg(clKernel_internal, 0, sizeof(cl_mem), (void *) &d_m);
+-			errcode |= clSetKernelArg(clKernel_internal, 1, sizeof(int), (void *) &matrix_dim);
+-			errcode |= clSetKernelArg(clKernel_internal, 2, sizeof(int), (void *) &i);
+-			CHKERR(errcode, "Failed to set kernel arguments!");
++			//	errcode = clSetKernelArg(clKernel_internal, 0, sizeof(cl_mem), (void *) &d_m);
++			//errcode |= clSetKernelArg(clKernel_internal, 1, sizeof(int), (void *) &matrix_dim);
++			//errcode |= clSetKernelArg(clKernel_internal, 2, sizeof(int), (void *) &i);
++			//CHKERR(errcode, "Failed to set kernel arguments!");
+ 			localWorkSize[0] = BLOCK_SIZE;
+ 			localWorkSize[1] = BLOCK_SIZE;
+ 			globalWorkSize[0] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[0];
+ 			globalWorkSize[1] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[1];
+-
+-			errcode = clEnqueueNDRangeKernel(commands, clKernel_internal, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++			block[0] = BLOCK_SIZE;
++			block[1] = BLOCK_SIZE;
++			grid[0] = ((matrix_dim-i)/BLOCK_SIZE-1);
++			grid[1] = ((matrix_dim-i)/BLOCK_SIZE-1);
++
++			//errcode = clEnqueueNDRangeKernel(commands, clKernel_internal, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++			errcode = meta_gen_opencl_lud_kernel_lud_internal(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
++			//unset the upper dimensions of grid and block since MetaCL assumes 3D kernels
++			grid[1] = 1; block[1] = 1;
+ 			clFinish(commands);
+ 			START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Internal Kernel", ocdTempTimer)
+ 				END_TIMER(ocdTempTimer)
+ 				CHKERR(errcode, "Failed to enqueue kernel!");
+ 		}
+-	errcode = clSetKernelArg(clKernel_diagonal, 0, sizeof(cl_mem), (void *) &d_m);
+-	errcode |= clSetKernelArg(clKernel_diagonal, 1, sizeof(int), (void *) &matrix_dim);
+-	errcode |= clSetKernelArg(clKernel_diagonal, 2, sizeof(int), (void *) &i);
+-	CHKERR(errcode, "Failed to set kernel arguments!");
++	//errcode = clSetKernelArg(clKernel_diagonal, 0, sizeof(cl_mem), (void *) &d_m);
++	//errcode |= clSetKernelArg(clKernel_diagonal, 1, sizeof(int), (void *) &matrix_dim);
++	//errcode |= clSetKernelArg(clKernel_diagonal, 2, sizeof(int), (void *) &i);
++	//CHKERR(errcode, "Failed to set kernel arguments!");
+ 	localWorkSize[0] = BLOCK_SIZE;
+ 	globalWorkSize[0] = BLOCK_SIZE;
++	block[0] = BLOCK_SIZE;
++	grid[0] = 1;
+ 
+-	errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++	//errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
++	errcode = meta_gen_opencl_lud_kernel_lud_diagonal(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+ 	clFinish(commands);
+ 	START_TIMER(ocdTempEvent, OCD_TIMER_KERNEL, "Diagonal Kernels", ocdTempTimer)
+ 		CHKERR(errcode, "Failed to enqueue kernel!");
+diff -Naur OpenDwarfs/dense-linear-algebra/lud/Makefile.mk OpenDwarfs-MetaCL-minimal/dense-linear-algebra/lud/Makefile.mk
+--- OpenDwarfs/dense-linear-algebra/lud/Makefile.mk	2019-06-05 14:16:55.828989599 -0400
++++ OpenDwarfs-MetaCL-minimal/dense-linear-algebra/lud/Makefile.mk	2019-06-05 14:58:48.544489674 -0400
+@@ -7,11 +7,20 @@
+ 
+ bin_PROGRAMS += lud
+ 
+-lud_SOURCES = dense-linear-algebra/lud/lud.c dense-linear-algebra/lud/common.c
++lud_KERNELARGS = -DOPENCL -I . -D BLOCK_SIZE=16
++lud_SOURCES = dense-linear-algebra/lud/lud.c dense-linear-algebra/lud/common.c dense-linear-algebra/lud/LUDModule.c
++lud_LDFLAGS = -lmetamorph -lmm_opencl_backend -L$(HOME)/MetaMorph/lib -R$(HOME)/MetaMorph/lib
++lud_CFLAGS = -I ~/MetaMorph/include -I ~/MetaMorph/metamorph-backends/opencl-backend/
++BUILT_SOURCES = dense-linear-algebra/lud/LUDModule.h
+ 
+ all_local += lud-all-local
+ exec_local += lud-exec-local
+ 
++dense-linear-algebra/lud/LUDModule.h: dense-linear-algebra/lud/LUDModule.c
++
++dense-linear-algebra/lud/LUDModule.c: $(top_srcdir)/dense-linear-algebra/lud/lud_kernel.cl $(top_srcdir)/dense-linear-algebra/lud/lud_kernel_opt_gpu.cl
++	cd ${top_srcdir}/dense-linear-algebra/lud && ~/MetaMorph/metamorph-generators/opencl/metaCL lud_kernel.cl lud_kernel_opt_gpu.cl --unified-output-file="LUDModule" -- -cl-std=CL1.2 --include opencl-c.h -I /usr/lib/llvm-6.0/lib/clang/6.0.0/include ${lud_KERNELARGS}
++
+ lud-all-local:
+ 	cp $(top_srcdir)/dense-linear-algebra/lud/lud_kernel.cl .
+ 	cp $(top_srcdir)/dense-linear-algebra/lud/lud_kernel_opt_gpu.cl .
