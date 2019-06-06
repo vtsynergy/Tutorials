@@ -1,4 +1,10 @@
-# WIP
+This tutorial provides a walkthrough of applying the [MetaCL+MetaMorph](https://github.com/VTSynergy/MetaMorph) and [FLOCL](https://github.com/VTSynergy/FLOCL) OpenCL support tools to kernel files from a pre-existing OpenCL application from the [OpenDwarfs](https://github.com/VTSynergy/OpenDwarfs).
+
+Both tools function like compilers, so the tutorial will introduce how to integrate them into an existing Makefile/Automake-based build system.
+
+**MetaCL** is designed to consume OpenCL kernel files, and generate the host-to-device interface necessary to launch all the `kernel` functions contained within. This includes all `cl_program` and `cl_kernel`-related boilerplate, supporting simplified initialization and a reduced-complexity developer experience when producing OpenCL host code. Further, through its interaction with the MetaMorph OpenCL backend, it provides `cl_device`-related auto-selection and initialization, and automatic _reinitialization_ of MetaCL-wrapped kernels when the device is changed through the MetaMorph interface.
+
+**FLOCL** is an extended version of the [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) _linter_ tool. (Linters are intended to provide extra code verification, cleanup, and other maintenance _before_ compilation.) The FLOCL extensions to clang-tidy are designed to detect semantic faults and performance holes that are specific to OpenCL kernel development and OpenCL-on-FPGA kernel development, which were not previously available. (In time these modules will be folded into the upstream clang-tidy, and cease to be a standalone project.) By providing _preliminary_ static analysis passes, FLOCL is intended to reduce the frequency and severity of errors detected _after_ lengthy FPGA compile/place/route steps, reducing the total number of CPR iterations and thus improving developer productivity.
 
 # Environment setup
 
