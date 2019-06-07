@@ -3,6 +3,7 @@
 The previous version left in a lot of the existing boilerplate features, which are now redundant. It also didn't take advantage of some of the behind-the-scenes features that MetaMorph offers. In this step we complete the MetaCL-ization of the code by eliminating any now-unnecessary boilerplate. Further we "MetaMorph-osize" the code to use MetaMorph's buffer and data transfer API to take advantage of its implicit timing capability. (Though the OpenDwarfs have their own manual timing infrastructure, not all projects do. Auto-timing of MetaCL-ized kernels will be implemented as future work.)
 
 #### As with the previous step, the changes for this step are all captured within the patch file `LUD.MetaCL-complete.patch`.
+If you want to make all the changes yourself, just make a copy of the directory but do not apply the patch command.
 * `cd ~`
 * `cp OpenDwarfs-MetaCL-minimal OpenDwarfs-MetaCL-complete`
 * `patch -p1 < ../LUD.MetaCL-complete.patch`
