@@ -63,14 +63,69 @@ On a successful run, the printed output will just be a list of the processed ker
 Navigate back to the source directory and open the main host file for editing
 * `cd ../dense-linear-algebra/lud && vim lud.c`
 
-The minimum set of changes only requires three real tasks:
+The minimum set of changes only requires four real tasks:
 1. Adding new header files
 2. Sharing existing OpenCL state with the MetaCL-generated interface and MetaMorph
-3. Replacing existing kernel launches
+3. Informing the MetaCL-generated module of any custom build arguments required for the kernels
+4. Replacing existing kernel launches
 
 ### Adding new header files
 To reference the newly-generated interface, we must add its header file to each file that wants to use it. Additionally, we must include the MetaMorph OpenCL backend's header. Add the following two lines at the end of the header list:
 ```
 #include "mm_opencl_backend.h"
 #include "LUDModule.h"
+```
+
+### Sharing existing OpenCL state from the host application to MetaMorph and the MetaCL-generated interface
+Since we are porting an existing application and trying to minimize the cost of entry, we will reuse the existing OpenCL state that was already manually created. To do this, you must explicitly share a cohesive set of OpenCL `cl_device_id`, `cl_platform_id`, `cl_context`, and `cl_command_queue` to MetaMorph via a call to `meta_set_state_OpenCL`. This will inform MetaCL of the state, and allow it to _auto-initialize_ the MetaCL-wrapped kernels for it. Add the below lines _after_ the existing state has been created but _before_ any `cl_programs` are built for it. (LUD does not have the `cl_platform_id` exposed, so we query it using the standard OpenCL API.)
+```
+   cl_platform_id plat;
+	clGetDeviceInfo(device_id, CL_DEVICE_PLATFORM, sizeof(cl_platform_id), &plat, NULL);
+	meta_set_state_OpenCL(plat, device_id, context, commands);
+```
+
+### Using custom build arguments
+The underlying OpenCL compiler still needs information about any custom build arguments required for the kernel. These may be preprocessor options like those provided to the MetaCL invocation, or they may be performance-related options such as `--cl-fast-relaxed-math`. At the time of writing this tutorial, those can be set on a per-kernel-file basis via an `extern` exposed `char *`, which can be found in the `LUDModule.h` header file.
+```
+	__meta_gen_opencl_lud_kernel_custom_args = arg;
+	__meta_gen_opencl_lud_kernel_opt_gpu_custom_args = arg;
+```
+
+### Replacing existing kernel launches
+Finally, we must replace the existing kernel launches, their forward argument assignments, and any following `clFinish` synchronizations. We can also safely remove any error checks associated with `clSetKernelArg`, `clEnqueueNDRangeKernel`, `clEnqueueTask`, and `clFinish` used for invoking the kernel because by default MetaCL generates an error check for every single OpenCL API call is generates. (This can be disabled via an option, if desired.)
+```
+//errcode = clSetKernelArg(clKernel_diagonal, 0, sizeof(cl_mem), (void *) &d_m);
+//errcode |= clSetKernelArg(clKernel_diagonal, 1, sizeof(int), (void *) &matrix_dim);
+//errcode |= clSetKernelArg(clKernel_diagonal, 2, sizeof(int), (void *) &i);
+//CHKERR(errcode, "Failed to set kernel arguments!");
+//errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
+//clFinish(commands);
+//errcode = clEnqueueNDRangeKernel(commands, clKernel_diagonal, 1, NULL, globalWorkSize, localWorkSize, 0, NULL, &ocdTempEvent);
+errcode = meta_gen_opencl_lud_kernel_lud_diagonal(commands, grid, block, &d_m, matrix_dim, i, 0, &ocdTempEvent);
+```
+
+Additionally, we must convert any existing `globalWorkSize` and `localWorkSize` to a `grid` and `block` with the `a_dim3` data type provided by MetaMorph. (For consistency reasons MetaMorph and MetaCL-generated codes use the CUDA grid/block model rather than OpenCL's worksize model. `block == localWorkSize` and `grid == globalWorkSize/localWorkSize`. As OpenCL already requires that the globalWorkSize in each dimension be an integer multiple of the corresponding localWorkSize, it is only a semantic difference.) All three dimensions should be specified, but unused dimensions can be safely set to `1`. We add these new size structs before any of the kernels, and then replace the size assignments. Since MetaCL assumes all kernels are 3D, we must also be sure to reset any unused dimensions to 1.
+```
+a_dim3 grid={1,1,1}, block={1,1,1};
+//localWorkSize[0] = BLOCK_SIZE;
+//localWorkSize[1] = BLOCK_SIZE;
+//globalWorkSize[0] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[0];
+//globalWorkSize[1] = ((matrix_dim-i)/BLOCK_SIZE-1)*localWorkSize[1];
+block[0] = BLOCK_SIZE;
+block[1] = BLOCK_SIZE;
+grid[0] = ((matrix_dim-i)/BLOCK_SIZE-1);
+grid[1] = ((matrix_dim-i)/BLOCK_SIZE-1);
+//RUN A 2D Kernel
+grid[1] = 1; block[1] = 1;
+```
+
+The default assumption of the MetaCL-generated wrappers is that all kernels are run _synchronously_ (i.e. with a tailing `clFinish`), if you wish to run one asynchronously, you can set the `async` parameter of the generated interface to `true` or `1`. Finally, a `cl_event *` is exposed so that you may get the Enqueue event from the kernel, which in this case we will use for the OpenDwarfs timing infrastructure. These are the second to last, and last parameters of the generated wrapper, respectively.
+
+
+### Validation
+After MetaCL-izing the kernel invocations, we need to build and run the code to make sure it continues to behave as expected. Return to the build directory, build it, and run it with the same dataset as the unmodified version.
+```
+cd ../../build
+make
+./lud -i ~/OpendDwarfs-tests/dense-linear-algebra/lud/64.dat -v
 ```
